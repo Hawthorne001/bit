@@ -1,4 +1,4 @@
-FROM debian
+FROM debian:12.6
 RUN apt-get update && apt-get install -y curl software-properties-common
 RUN curl -sL https://deb.nodesource.com/setup_10.x | bash -
 RUN apt-get -y install nano git nodejs ruby ruby-dev rubygems build-essential
