@@ -195,6 +195,7 @@ describe('bit lane command', function () {
         helper.command.export();
         helper.command.switchLocalLane('dev', '--skip-dependency-installation');
         helper.fs.deletePath('.bit');
+        helper.command.init();
         helper.scopeHelper.addRemoteScope();
         helper.command.import();
         localScope = helper.scopeHelper.cloneLocalScope();
@@ -301,6 +302,46 @@ describe('bit lane command', function () {
       const bitmap = helper.bitMap.read();
       expect(bitmap.comp1.version).to.not.equal('0.0.1');
       expect(bitmap.comp1.version).to.equal(headOnLane);
+    });
+  });
+  describe('import with wildcard when a component is on main and user is checked out to a lane', () => {
+    let beforeImport: string;
+    before(() => {
+      helper.scopeHelper.setNewLocalAndRemoteScopes();
+      helper.fixtures.createComponentBarFoo();
+      helper.fixtures.addComponentBarFoo();
+      helper.command.tagAllWithoutBuild();
+      helper.command.export();
+      helper.scopeHelper.reInitLocalScope();
+      helper.scopeHelper.addRemoteScope();
+      helper.command.createLane();
+      helper.fixtures.populateComponents(1);
+      helper.command.snapAllComponentsWithoutBuild();
+      helper.command.export();
+      beforeImport = helper.scopeHelper.cloneLocalScope();
+    });
+    describe('when the wildcard is parsed to only main', () => {
+      before(() => {
+        helper.command.importComponent('bar/*', '-x');
+      });
+      it('should import from main', () => {
+        const list = helper.command.listParsed();
+        expect(list).to.have.lengthOf(2);
+        const ids = list.map((c) => c.id);
+        expect(ids).to.include(`${helper.scopes.remote}/bar/foo`);
+      });
+    });
+    describe('when the wildcard is parsed to components in the lane and in main', () => {
+      before(() => {
+        helper.scopeHelper.getClonedLocalScope(beforeImport);
+        helper.command.importComponent('**', '-x');
+      });
+      it('should import only the components from the lane, not main', () => {
+        const list = helper.command.listParsed();
+        expect(list).to.have.lengthOf(1);
+        const ids = list.map((c) => c.id);
+        expect(ids[0]).to.equal(`${helper.scopes.remote}/comp1`);
+      });
     });
   });
 });

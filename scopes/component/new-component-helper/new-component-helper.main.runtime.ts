@@ -5,10 +5,10 @@ import { InvalidScopeName, isValidScopeName } from '@teambit/legacy-bit-id';
 import { MainRuntime } from '@teambit/cli';
 import { Component } from '@teambit/component';
 import { TrackerAspect, TrackerMain } from '@teambit/tracker';
-import { isDirEmpty } from '@teambit/legacy/dist/utils';
+import { PathLinuxRelative } from '@teambit/toolbox.path.path';
+import { isDirEmpty } from '@teambit/toolbox.fs.is-dir-empty';
 import { ComponentID } from '@teambit/component-id';
 import { Harmony } from '@teambit/harmony';
-import { PathLinuxRelative } from '@teambit/legacy/dist/utils/path';
 import { WorkspaceAspect, Workspace } from '@teambit/workspace';
 import { PkgAspect } from '@teambit/pkg';
 import { RenamingAspect } from '@teambit/renaming';
@@ -19,7 +19,11 @@ import { incrementPathRecursively } from '@teambit/component-writer';
 const aspectsConfigToIgnore: string[] = [PkgAspect.id, RenamingAspect.id];
 
 export class NewComponentHelperMain {
-  constructor(private workspace: Workspace, private harmony: Harmony, private tracker: TrackerMain) {}
+  constructor(
+    private workspace: Workspace,
+    private harmony: Harmony,
+    private tracker: TrackerMain
+  ) {}
   /**
    * when creating/forking a component, the user provides the new name and optionally the scope/namespace.
    * from this user input, create a ComponentID.

@@ -83,7 +83,7 @@ export class ForkingMain {
    */
   getForkInfo(component: Component): ForkInfo | null {
     const forkConfig = component.state.aspects.get(ForkingAspect.id)?.config as ForkConfig | undefined;
-    if (!forkConfig) return null;
+    if (!forkConfig?.forkedFrom) return null;
     return {
       forkedFrom: ComponentID.fromObject(forkConfig.forkedFrom),
     };
@@ -186,10 +186,12 @@ export class ForkingMain {
    */
   async forkScope(
     originalScope: string,
-    newScope: string,
+    newOptionalScope?: string, // if not specified, it'll be the default scope
     pattern?: string,
     options?: ScopeForkOptions
   ): Promise<ComponentID[]> {
+    if (!this.workspace) throw new OutsideWorkspaceError();
+    const newScope = newOptionalScope || this.workspace.defaultScope;
     const allIdsFromOriginalScope = await this.workspace.scope.listRemoteScope(originalScope);
     if (!allIdsFromOriginalScope.length) {
       throw new Error(`unable to find components to fork from ${originalScope}`);
@@ -379,7 +381,7 @@ the reason is that the refactor changes the components using ${sourceId.toString
     GraphqlMain,
     RefactoringMain,
     PkgMain,
-    InstallMain
+    InstallMain,
   ]) {
     const forkingMain = new ForkingMain(workspace, install, dependencyResolver, newComponentHelper, refactoring, pkg);
     cli.register(new ForkCmd(forkingMain));

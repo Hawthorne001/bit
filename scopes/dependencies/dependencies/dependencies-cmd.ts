@@ -3,9 +3,9 @@ import { Command, CommandOptions } from '@teambit/cli';
 import Table from 'cli-table';
 import chalk from 'chalk';
 import archy from 'archy';
-import { generateDependenciesInfoTable } from '@teambit/legacy/dist/cli/templates/component-template';
 import { ComponentIdGraph } from '@teambit/graph';
 import { COMPONENT_PATTERN_HELP } from '@teambit/legacy/dist/constants';
+import { generateDependenciesInfoTable } from './template';
 import { DependenciesMain } from './dependencies.main.runtime';
 
 type GetDependenciesFlags = {
@@ -29,7 +29,7 @@ export class DependenciesGetCmd implements Command {
   alias = '';
   options = [
     ['', 'scope', 'get the data from the scope instead of the workspace'],
-    ['t', 'tree', 'EXPERIMENTAL. render dependencies as a tree, similar to "npm ls"'],
+    ['t', 'tree', 'render dependencies as a tree, similar to "npm ls"'],
   ] as CommandOptions;
 
   constructor(private deps: DependenciesMain) {}
@@ -228,7 +228,7 @@ export class DependenciesBlameCmd implements Command {
     },
   ];
   group = 'info';
-  description = 'EXPERIMENTAL. find out which snap/tag changed a dependency version';
+  description = 'find out which snap/tag changed a dependency version';
   alias = '';
   options = [] as CommandOptions;
 
@@ -283,7 +283,7 @@ export class DependenciesUsageCmd implements Command {
     },
   ];
   group = 'info';
-  description = 'EXPERIMENTAL. find components that use the specified dependency';
+  description = 'find components that use the specified dependency';
   alias = '';
   options = [['', 'depth <number>', 'max display depth of the dependency graph']] as CommandOptions;
 
@@ -341,5 +341,21 @@ export class SetPeerCmd implements Command {
   async report([componentId, range]: [string, string]) {
     await this.deps.setPeer(componentId, range != null ? range.toString() : range);
     return `${chalk.green('successfully marked the component as a peer component')}`;
+  }
+}
+
+export class UnsetPeerCmd implements Command {
+  name = 'unset-peer <component-id>';
+  arguments = [{ name: 'component-id', description: 'the component to unset as always peer' }];
+  group = 'info';
+  description = 'unset a component as always peer';
+  alias = '';
+  options = [];
+
+  constructor(private deps: DependenciesMain) {}
+
+  async report([componentId]: [string]) {
+    await this.deps.unsetPeer(componentId);
+    return `${chalk.green('successfully marked the component as not a peer component')}`;
   }
 }

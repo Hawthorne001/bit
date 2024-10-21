@@ -8,9 +8,9 @@ import { WorkspaceAspect, OutsideWorkspaceError, Workspace } from '@teambit/work
 import { compact } from 'lodash';
 import pMapSeries from 'p-map-series';
 import { Version } from '@teambit/legacy/dist/scope/models';
-import { pathNormalizeToLinux } from '@teambit/legacy/dist/utils/path';
+import { pathNormalizeToLinux } from '@teambit/toolbox.path.path';
 import { Ref } from '@teambit/legacy/dist/scope/objects';
-import { getFilesDiff } from '@teambit/legacy/dist/consumer/component-ops/components-diff';
+import { getFilesDiff } from '@teambit/legacy.component-diff';
 import chalk from 'chalk';
 import getRemoteByName from '@teambit/legacy/dist/remotes/get-remote-by-name';
 import { ComponentLogAspect } from './component-log.aspect';
@@ -51,7 +51,7 @@ export class ComponentLogMain {
     }
     if (!this.workspace) throw new OutsideWorkspaceError();
     const componentId = await this.workspace.resolveComponentId(id);
-    const logs = await this.workspace.scope.getLogs(componentId, shortHash);
+    const logs = await this.workspace.scope.getLogs(componentId, shortHash, undefined, true);
     logs.forEach((log) => {
       log.date = log.date ? moment(new Date(parseInt(log.date))).format('YYYY-MM-DD HH:mm:ss') : undefined;
       log.message = shortMessage ? log.message.split('\n')[0] : log.message;

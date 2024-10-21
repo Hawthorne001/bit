@@ -4,7 +4,7 @@ import { Component } from '@teambit/component';
 import { ComponentID } from '@teambit/component-id';
 import { flatten, isEmpty, chunk } from 'lodash';
 import { Compiler } from '@teambit/compiler';
-import type { AbstractVinyl } from '@teambit/legacy/dist/consumer/component/sources';
+import type { AbstractVinyl } from '@teambit/component.sources';
 import type { Capsule } from '@teambit/isolator';
 import { CAPSULE_ARTIFACTS_DIR, ComponentResult } from '@teambit/builder';
 import type { PkgMain } from '@teambit/pkg';
@@ -28,7 +28,7 @@ export const COMPONENT_STRATEGY_ARTIFACT_NAME = 'preview-component';
 
 type ComponentEntry = {
   component: Component;
-  entries: Object;
+  entries: object;
 };
 /**
  * bundles all components in a given env into the same bundle.

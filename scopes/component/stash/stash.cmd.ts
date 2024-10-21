@@ -1,6 +1,6 @@
 // eslint-disable-next-line max-classes-per-file
 import chalk from 'chalk';
-import { MergeStrategy } from '@teambit/legacy/dist/consumer/versions-ops/merge-version';
+import { MergeStrategy } from '@teambit/merging';
 import { Command, CommandOptions } from '@teambit/cli';
 import { CheckoutProps } from '@teambit/checkout';
 import { COMPONENT_PATTERN_HELP } from '@teambit/legacy/dist/constants';
@@ -66,7 +66,7 @@ export class StashLoadCmd implements Command {
   group = 'development';
   options = [
     [
-      '',
+      'r',
       'auto-merge-resolve <merge-strategy>',
       'in case of merge conflict, resolve according to the provided strategy: [ours, theirs, manual]',
     ],
@@ -108,7 +108,7 @@ export class StashLoadCmd implements Command {
 
 export class StashCmd implements Command {
   name = 'stash <sub-command>';
-  description = 'EXPERIMENTAL. stash modified components';
+  description = 'stash modified components';
   group = 'development';
   options = [
     ['p', 'pattern', COMPONENT_PATTERN_HELP],

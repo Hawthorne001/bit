@@ -11,13 +11,13 @@ import { linkToNodeModulesByComponents } from '@teambit/workspace.modules.node-m
 import ConsumerComponent from '@teambit/legacy/dist/consumer/component/consumer-component';
 import Consumer from '@teambit/legacy/dist/consumer/consumer';
 import { NewerVersionFound } from '@teambit/legacy/dist/consumer/exceptions';
-import { getBasicLog } from '@teambit/legacy/dist/utils/bit/basic-log';
 import { Component } from '@teambit/component';
-import deleteComponentsFiles from '@teambit/legacy/dist/consumer/component-ops/delete-component-files';
+import { deleteComponentsFiles } from '@teambit/remove';
 import logger from '@teambit/legacy/dist/logger/logger';
-import { sha1 } from '@teambit/legacy/dist/utils';
+import { getValidVersionOrReleaseType } from '@teambit/pkg.modules.semver-helper';
+import { getBasicLog } from '@teambit/harmony.modules.get-basic-log';
+import { sha1 } from '@teambit/toolbox.crypto.sha1';
 import { AutoTagResult, getAutoTagInfo } from '@teambit/legacy/dist/scope/component-ops/auto-tag';
-import { getValidVersionOrReleaseType } from '@teambit/legacy/dist/utils/semver-helper';
 import { BuilderMain, OnTagOpts } from '@teambit/builder';
 import { Log } from '@teambit/legacy/dist/scope/models/version';
 import {
@@ -53,9 +53,14 @@ export type BasicTagParams = BasicTagSnapParams & {
 };
 
 function updateDependenciesVersions(
-  componentsToTag: ConsumerComponent[],
+  allComponentsToTag: ConsumerComponent[],
   dependencyResolver: DependencyResolverMain
-): void {
+) {
+  // filter out removed components.
+  // if a component has a deleted-component as a dependency, it was probably running "bit install <dep>" with a version
+  // from main. we want to keep it as the user requested. Otherwise, this changes the dependency version to the newly
+  // snapped one unintentionally.
+  const componentsToTag = allComponentsToTag.filter((c) => !c.isRemoved());
   const getNewDependencyVersion = (id: ComponentID): ComponentID | null => {
     const foundDependency = componentsToTag.find((component) => component.id.isEqualWithoutVersion(id));
     return foundDependency ? id.changeVersion(foundDependency.version) : null;
@@ -175,6 +180,7 @@ export async function tagModelComponent({
   ids,
   tagDataPerComp,
   populateArtifactsFrom,
+  populateArtifactsIgnorePkgJson,
   message,
   editor,
   exactVersion,
@@ -206,6 +212,7 @@ export async function tagModelComponent({
   ids: ComponentIdList;
   tagDataPerComp?: TagDataPerComp[];
   populateArtifactsFrom?: ComponentID[];
+  populateArtifactsIgnorePkgJson?: boolean;
   copyLogFromPreviousSnap?: boolean;
   exactVersion?: string | null | undefined;
   releaseType?: ReleaseType;
@@ -237,8 +244,12 @@ export async function tagModelComponent({
   // ids without versions are new. it's impossible that tagged (and not-modified) components has
   // them as dependencies.
   const idsToTriggerAutoTag = idsToTag.filter((id) => id.hasVersion());
-  const autoTagData =
+  const autoTagDataWithLocalOnly =
     skipAutoTag || !consumer ? [] : await getAutoTagInfo(consumer, ComponentIdList.fromArray(idsToTriggerAutoTag));
+  const localOnly = workspace?.listLocalOnly();
+  const autoTagData = localOnly
+    ? autoTagDataWithLocalOnly.filter((autoTagItem) => !localOnly.hasWithoutVersion(autoTagItem.component.id))
+    : autoTagDataWithLocalOnly;
   const autoTagComponents = autoTagData.map((autoTagItem) => autoTagItem.component);
   const autoTagComponentsFiltered = autoTagComponents.filter((c) => !idsToTag.has(c.id));
   const autoTagIds = ComponentIdList.fromArray(autoTagComponentsFiltered.map((autoTag) => autoTag.id));
@@ -346,7 +357,7 @@ export async function tagModelComponent({
     };
     const skipTasksParsed = skipTasks ? skipTasks.split(',').map((t) => t.trim()) : undefined;
     const seedersOnly = !workspace; // if tag from scope, build only the given components
-    const isolateOptions = { packageManagerConfigRootDir, seedersOnly };
+    const isolateOptions = { packageManagerConfigRootDir, seedersOnly, populateArtifactsIgnorePkgJson };
     const builderOptions = { exitOnFirstFailedTask, skipTests, skipTasks: skipTasksParsed };
 
     const componentsToBuild = allComponentsToTag.filter((c) => !c.isRemoved());
@@ -438,7 +449,7 @@ async function removeMergeConfigFromComponents(
 async function addComponentsToScope(
   snapping: SnappingMain,
   components: ConsumerComponent[],
-  lane: Lane | null,
+  lane: Lane | undefined,
   shouldValidateVersion: boolean,
   consumer?: Consumer,
   tagDataPerComp?: TagDataPerComp[],
@@ -535,7 +546,7 @@ function setCurrentSchema(components: ConsumerComponent[]) {
 
 function addBuildStatus(components: ConsumerComponent[], buildStatus: BuildStatus) {
   components.forEach((component) => {
-    component.buildStatus = buildStatus;
+    component.buildStatus = component.isRemoved() ? BuildStatus.Skipped : buildStatus;
   });
 }
 

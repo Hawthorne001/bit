@@ -1,5 +1,4 @@
 import { Workspace } from '@teambit/workspace';
-import { MergeStrategy } from '@teambit/legacy/dist/consumer/versions-ops/merge-version';
 import mapSeries from 'p-map-series';
 import { ComponentID, ComponentIdList } from '@teambit/component-id';
 import { DEFAULT_LANE, LaneId } from '@teambit/lane-id';
@@ -11,11 +10,11 @@ import ConsumerComponent from '@teambit/legacy/dist/consumer/component/consumer-
 import { ImporterMain } from '@teambit/importer';
 import { Logger } from '@teambit/logger';
 import { compact } from 'lodash';
-import threeWayMerge from '@teambit/legacy/dist/consumer/versions-ops/merge-version/three-way-merge';
 import { SnapsDistance } from '@teambit/legacy/dist/scope/component-ops/snaps-distance';
 import { NoCommonSnap } from '@teambit/legacy/dist/scope/exceptions/no-common-snap';
 import { ComponentConfigMerger } from '@teambit/config-merger';
 import { ScopeMain } from '@teambit/scope';
+import { threeWayMerge, MergeStrategy } from './merge-version';
 import { ComponentMergeStatus, ComponentMergeStatusBeforeMergeAttempt } from './merging.main.runtime';
 
 export type MergeStatusProviderOptions = {
@@ -23,6 +22,7 @@ export type MergeStatusProviderOptions = {
   mergeStrategy: MergeStrategy;
   ignoreConfigChanges?: boolean;
   shouldSquash?: boolean;
+  handleTargetAheadAsDiverged?: boolean;
 };
 
 export const compIsAlreadyMergedMsg = 'component is already merged';
@@ -306,7 +306,12 @@ other:   ${otherLaneHead.toString()}`);
         // component is ahead nothing to merge.
         return this.returnUnmerged(id, compIsAlreadyMergedMsg, true);
       }
-      if (divergeData.isTargetAhead()) {
+      if (!divergeData.isTargetAhead()) {
+        // we know that localHead and remoteHead are set, so if none of them is ahead they must be equal
+        return this.returnUnmerged(id, compIsAlreadyMergedMsg, true);
+      }
+      // target is ahead.
+      if (!this.options.handleTargetAheadAsDiverged || !divergeData.commonSnapBeforeDiverge) {
         // just override with the model data
         return {
           ...componentStatus,
@@ -315,8 +320,7 @@ other:   ${otherLaneHead.toString()}`);
           divergeData,
         };
       }
-      // we know that localHead and remoteHead are set, so if none of them is ahead they must be equal
-      return this.returnUnmerged(id, compIsAlreadyMergedMsg, true);
+      // target is ahead and we want to treat it as diverged, continue.
     }
 
     // it's diverged and needs merge operation

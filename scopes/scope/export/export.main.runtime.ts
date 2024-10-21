@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import { CLIAspect, CLIMain, MainRuntime } from '@teambit/cli';
 import { ScopeAspect, ScopeMain } from '@teambit/scope';
 import { BitError } from '@teambit/bit-error';
-import { Analytics } from '@teambit/legacy/dist/analytics/analytics';
+import { Analytics } from '@teambit/legacy.analytics';
 import { ComponentID, ComponentIdList } from '@teambit/component-id';
 import loader from '@teambit/legacy/dist/cli/loader';
 import {
@@ -10,19 +10,13 @@ import {
   BEFORE_EXPORTS,
   BEFORE_LOADING_COMPONENTS,
 } from '@teambit/legacy/dist/cli/loader/loader-messages';
-import {
-  CENTRAL_BIT_HUB_NAME,
-  CENTRAL_BIT_HUB_URL,
-  POST_EXPORT_HOOK,
-  PRE_EXPORT_HOOK,
-} from '@teambit/legacy/dist/constants';
+import { CENTRAL_BIT_HUB_NAME, CENTRAL_BIT_HUB_URL } from '@teambit/legacy/dist/constants';
 import { Consumer } from '@teambit/legacy/dist/consumer';
-import BitMap from '@teambit/legacy/dist/consumer/bit-map/bit-map';
-import ComponentsList from '@teambit/legacy/dist/consumer/component/components-list';
-import HooksManager from '@teambit/legacy/dist/hooks';
+import { BitMap } from '@teambit/legacy.bit-map';
+import { ComponentsList } from '@teambit/legacy.component-list';
 import { RemoveAspect, RemoveMain } from '@teambit/remove';
 import { Lane, ModelComponent, Symlink, Version } from '@teambit/legacy/dist/scope/models';
-import hasWildcard from '@teambit/legacy/dist/utils/string/has-wildcard';
+import { hasWildcard } from '@teambit/legacy.utils';
 import { Scope } from '@teambit/legacy/dist/scope';
 import { WorkspaceAspect, OutsideWorkspaceError, Workspace } from '@teambit/workspace';
 import { Logger, LoggerAspect, LoggerMain } from '@teambit/logger';
@@ -34,7 +28,6 @@ import mapSeries from 'p-map-series';
 import { LaneId, DEFAULT_LANE } from '@teambit/lane-id';
 import { Remote, Remotes } from '@teambit/legacy/dist/remotes';
 import { EjectAspect, EjectMain, EjectResults } from '@teambit/eject';
-import { SUPPORT_LANE_HISTORY, isFeatureEnabled } from '@teambit/legacy/dist/api/consumer/lib/feature-toggle';
 import { getScopeRemotes } from '@teambit/legacy/dist/scope/scope-remotes';
 import { ExportOrigin } from '@teambit/legacy/dist/scope/network/http/http';
 import { linkToNodeModulesByIds } from '@teambit/workspace.modules.node-modules-linker';
@@ -50,8 +43,6 @@ import { getAllVersionHashes } from '@teambit/legacy/dist/scope/component-ops/tr
 import { ExportAspect } from './export.aspect';
 import { ExportCmd } from './export-cmd';
 import { ResumeExportCmd } from './resume-export-cmd';
-
-const HooksManagerInstance = HooksManager.getInstance();
 
 export type OnExportIdTransformer = (id: ComponentID) => ComponentID;
 
@@ -82,6 +73,7 @@ type ExportParams = {
 
 export interface ExportResult {
   nonExistOnBitMap: ComponentID[];
+  newIdsOnRemote: ComponentID[];
   removedIds: ComponentIdList;
   missingScope: ComponentID[];
   componentsIds: ComponentID[];
@@ -100,14 +92,14 @@ export class ExportMain {
   ) {}
 
   async export(params: ExportParams = {}): Promise<ExportResult> {
-    HooksManagerInstance?.triggerHook(PRE_EXPORT_HOOK, params);
-    const { nonExistOnBitMap, missingScope, exported, removedIds, exportedLanes, rippleJobs } =
+    const { nonExistOnBitMap, newIdsOnRemote, missingScope, exported, removedIds, exportedLanes, rippleJobs } =
       await this.exportComponents(params);
     let ejectResults: EjectResults | undefined;
     await this.workspace.clearCache(); // needed when one process executes multiple commands, such as in "bit test" or "bit cli"
     if (params.eject) ejectResults = await this.ejectExportedComponents(exported);
     const exportResults = {
       componentsIds: exported,
+      newIdsOnRemote,
       nonExistOnBitMap,
       removedIds,
       missingScope,
@@ -115,7 +107,6 @@ export class ExportMain {
       exportedLanes,
       rippleJobs,
     };
-    HooksManagerInstance?.triggerHook(POST_EXPORT_HOOK, exportResults);
     if (Scope.onPostExport) {
       await Scope.onPostExport(exported, exportedLanes).catch((err) => {
         this.logger.error('fatal: onPostExport encountered an error (this error does not stop the process)', err);
@@ -147,7 +138,7 @@ export class ExportMain {
       includeNonStaged || headOnly
     );
 
-    if (!idsToExport.length) {
+    if (!idsToExport.length && !laneObject) {
       return {
         updatedIds: [],
         nonExistOnBitMap: [],
@@ -158,6 +149,10 @@ export class ExportMain {
         exportedLanes: [],
         rippleJobs: [],
       };
+    }
+    if (!idsToExport.length && laneObject && params.forkLaneNewScope) {
+      throw new BitError(`the forked lane "${laneObject.name}" has no changes, to export all its components, please use "--all" flag
+if the export fails with missing objects/versions/components, run "bit fetch --lanes <lane-name> --all-history", to make sure you have the full history locally`);
     }
 
     // validate lane readme component and ensure it has been snapped
@@ -202,6 +197,7 @@ if the export fails with missing objects/versions/components, run "bit fetch --l
     const nonExistOnBitMap = exported.filter(
       (id) => !workspaceIds.hasWithoutVersion(id) && !removedIds.hasWithoutVersion(id)
     );
+    // @ts-ignore todo: remove after deleting teambit.legacy
     const updatedIds = _updateIdsOnBitMap(consumer.bitMap, updatedLocally);
     // re-generate the package.json, this way, it has the correct data in the componentId prop.
     await linkToNodeModulesByIds(this.workspace, updatedIds, true);
@@ -443,11 +439,9 @@ if the export fails with missing objects/versions/components, run "bit fetch --l
       // don't use Promise.all, otherwise, it'll throw "JavaScript heap out of memory" on a large set of data
       await mapSeries(refsToExportPerComponent, processModelComponent);
       if (lane) {
-        if (isFeatureEnabled(SUPPORT_LANE_HISTORY)) {
-          const laneHistory = await this.workspace.scope.legacyScope.lanes.getOrCreateLaneHistory(lane);
-          const laneHistoryData = await bitObjectToObjectItem(laneHistory);
-          objectList.addIfNotExist([laneHistoryData]);
-        }
+        const laneHistory = await scope.lanes.getOrCreateLaneHistory(lane);
+        const laneHistoryData = await bitObjectToObjectItem(laneHistory);
+        objectList.addIfNotExist([laneHistoryData]);
         const laneData = await bitObjectToObjectItem(lane);
         objectList.addIfNotExist([laneData]);
       }
@@ -520,7 +514,7 @@ if the export fails with missing objects/versions/components, run "bit fetch --l
         const newIdsOnRemote = exportedIds!.map((id) => ComponentID.fromString(id));
         // remove version. exported component might have multiple versions exported
         const idsWithRemoteScope: ComponentID[] = newIdsOnRemote.map((id) => id.changeVersion(undefined));
-        const idsWithRemoteScopeUniq = ComponentIdList.uniqFromArray(idsWithRemoteScope);
+        const idsWithRemoteScopeUniq = ComponentIdList.uniqFromArray(idsWithRemoteScope).sort();
         return {
           newIdsOnRemote,
           exported: idsWithRemoteScopeUniq,
@@ -585,7 +579,7 @@ if the export fails with missing objects/versions/components, run "bit fetch --l
     return ejectResults;
   }
 
-  private async pushToRemotesCarefully(manyObjectsPerRemote: ObjectsPerRemote[], resumeExportId?: string) {
+  async pushToRemotesCarefully(manyObjectsPerRemote: ObjectsPerRemote[], resumeExportId?: string) {
     const remotes = manyObjectsPerRemote.map((o) => o.remote);
     const clientId = resumeExportId || Date.now().toString();
     await this.pushRemotesPendingDir(clientId, manyObjectsPerRemote, resumeExportId);
@@ -623,7 +617,7 @@ if the export fails with missing objects/versions/components, run "bit fetch --l
     });
   }
 
-  private shouldPushToCentralHub(
+  shouldPushToCentralHub(
     manyObjectsPerRemote: ObjectsPerRemote[],
     scopeRemotes: Remotes,
     originDirectly = false
@@ -770,16 +764,17 @@ if the export fails with missing objects/versions/components, run "bit fetch --l
     const consumer = this.workspace.consumer;
     const componentsList = new ComponentsList(consumer);
     const idsHaveWildcard = hasWildcard(ids);
-    const filterNonScopeIfNeeded = async (
+    const throwForLocalOnlyIfNeeded = async (
       bitIds: ComponentIdList
     ): Promise<{ idsToExport: ComponentIdList; missingScope: ComponentID[]; idsWithFutureScope: ComponentIdList }> => {
-      const idsWithFutureScope = await this.getIdsWithFutureScope(bitIds);
-      // const [idsToExport, missingScope] = R.partition((id) => {
-      // const idWithFutureScope = idsWithFutureScope.searchWithoutScopeAndVersion(id);
-      // if (!idWithFutureScope) throw new Error(`idsWithFutureScope is missing ${id.toString()}`);
-      // return idWithFutureScope.hasScope();
-      // }, bitIds);
-      return { idsToExport: ComponentIdList.fromArray(bitIds), missingScope: [], idsWithFutureScope };
+      const localOnlyComponents = this.workspace.listLocalOnly();
+      const localOnlyExportPending = bitIds.filter((id) => localOnlyComponents.hasWithoutScopeAndVersion(id));
+      if (localOnlyExportPending.length) {
+        throw new BitError(`unable to export the following components as they are local only:
+(either bit-reset them or run "bit local-only unset" to make them non local only)
+${localOnlyExportPending.map((c) => c.toString()).join('\n')}`);
+      }
+      return { idsToExport: ComponentIdList.fromArray(bitIds), missingScope: [], idsWithFutureScope: bitIds };
     };
     if (isUserTryingToExportLanes(consumer)) {
       if (ids.length) {
@@ -788,7 +783,7 @@ if the export fails with missing objects/versions/components, run "bit fetch --l
       const { componentsToExport, laneObject } = await this.getLaneCompIdsToExport(consumer, includeNonStaged);
       const loaderMsg = componentsToExport.length > 1 ? BEFORE_EXPORTS : BEFORE_EXPORT;
       loader.start(loaderMsg);
-      const filtered = await filterNonScopeIfNeeded(componentsToExport);
+      const filtered = await throwForLocalOnlyIfNeeded(componentsToExport);
       return { ...filtered, laneObject };
     }
     if (!ids.length || idsHaveWildcard) {
@@ -801,32 +796,14 @@ if the export fails with missing objects/versions/components, run "bit fetch --l
         : exportPendingComponents;
       const loaderMsg = componentsToExport.length > 1 ? BEFORE_EXPORTS : BEFORE_EXPORT;
       loader.start(loaderMsg);
-      return filterNonScopeIfNeeded(componentsToExport);
+      return throwForLocalOnlyIfNeeded(componentsToExport);
     }
     loader.start(BEFORE_EXPORT); // show single export
     const parsedIds = await Promise.all(ids.map((id) => getParsedId(consumer, id)));
     // load the components for fixing any out-of-sync issues.
     await consumer.loadComponents(ComponentIdList.fromArray(parsedIds));
 
-    return filterNonScopeIfNeeded(ComponentIdList.fromArray(parsedIds));
-  }
-
-  /**
-   * remove the entire "idsWithFutureScope" thing. is not relevant anymore.
-   */
-  private async getIdsWithFutureScope(ids: ComponentIdList): Promise<ComponentIdList> {
-    return ids;
-    // const idsArrayP = ids.map(async (id) => {
-    //   if (id.hasScope()) return id;
-    //   const componentId = await this.workspace.resolveComponentId(id);
-    //   const finalScope = await this.workspace.componentDefaultScope(componentId);
-    //   if (finalScope) {
-    //     return id.changeScope(finalScope);
-    //   }
-    //   return id;
-    // });
-    // const idsArray = await Promise.all(idsArrayP);
-    // return ComponentIdList.fromArray(idsArray);
+    return throwForLocalOnlyIfNeeded(ComponentIdList.fromArray(parsedIds));
   }
 
   private async getLaneCompIdsToExport(
@@ -873,7 +850,7 @@ if the export fails with missing objects/versions/components, run "bit fetch --l
     RemoveMain,
     DependencyResolverMain,
     LoggerMain,
-    EjectMain
+    EjectMain,
   ]) {
     const logger = loggerMain.createLogger(ExportAspect.id);
     const exportMain = new ExportMain(workspace, remove, depResolver, logger, eject);

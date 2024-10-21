@@ -11,7 +11,7 @@ import ConsumerComponent from '@teambit/legacy/dist/consumer/component';
 import { BuildStatus, LATEST } from '@teambit/legacy/dist/constants';
 import { ComponentIdList } from '@teambit/component-id';
 import { LaneId } from '@teambit/lane-id';
-import { getValidVersionOrReleaseType } from '@teambit/legacy/dist/utils/semver-helper';
+import { getValidVersionOrReleaseType } from '@teambit/pkg.modules.semver-helper';
 import { DependencyResolverAspect, DependencyResolverMain } from '@teambit/dependency-resolver';
 import { ExportAspect, ExportMain } from '@teambit/export';
 import { LanesAspect, Lane, LanesMain } from '@teambit/lanes';
@@ -184,7 +184,7 @@ to bypass this error, use --skip-new-scope-validation flag (not recommended. it 
 
   private async addComponentsToScope() {
     await mapSeries(this.legacyComponents, (component) =>
-      this.snapping._addCompFromScopeToObjects(component, this.laneObj || null)
+      this.snapping._addCompFromScopeToObjects(component, this.laneObj)
     );
   }
 
@@ -243,6 +243,12 @@ to bypass this error, use --skip-new-scope-validation flag (not recommended. it 
       // for simulation, we don't have the objects of the dependencies, so don't try to find the
       // exact version, expect the entered version to be okay.
       return compId;
+    }
+    if (this.laneObj) {
+      // for "update-dependents" feature, we need the components from update-dependents prop of the lane to have get
+      // the updated versions of the dependencies from the lane.
+      const fromLane = this.laneObj.getCompHeadIncludeUpdateDependents(compId);
+      if (fromLane) return compId.changeVersion(fromLane.toString());
     }
     return this.snapping.getCompIdWithExactVersionAccordingToSemver(compId);
   }
@@ -341,7 +347,7 @@ to bypass this error, use --skip-new-scope-validation flag (not recommended. it 
       DependencyResolverMain,
       SnappingMain,
       LanesMain,
-      ExportMain
+      ExportMain,
     ],
     _,
     [onPostUpdateDependenciesSlot]: [OnPostUpdateDependenciesSlot]

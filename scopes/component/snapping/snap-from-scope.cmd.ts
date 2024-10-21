@@ -30,7 +30,6 @@ type SnapFromScopeOptions = {
   lane?: string;
   ignoreIssues?: string;
   disableSnapPipeline?: boolean;
-  forceDeploy?: boolean;
   updateDependents?: boolean;
 } & BasicTagSnapParams;
 
@@ -65,7 +64,6 @@ an example of the final data: '[{"componentId":"ci.remote2/comp-b","message": "f
     ['', 'build', 'run the build pipeline'],
     ['', 'skip-tests', 'skip running component tests during snap process'],
     ['', 'disable-snap-pipeline', 'skip the snap pipeline'],
-    ['', 'force-deploy', 'DEPRECATED. use --ignore-build-error instead'],
     ['', 'ignore-build-errors', 'run the snap pipeline although the build pipeline failed'],
     ['', 'rebuild-deps-graph', 'do not reuse the saved dependencies graph, instead build it from scratch'],
     [
@@ -78,14 +76,17 @@ to ignore multiple issues, separate them by a comma and wrap with quotes. to ign
     [
       '',
       'update-dependents',
-      'EXPERIMENTAL. when snapped on a lane, mark it as update-dependents so it will be skipped from the workspace',
+      'when snapped on a lane, mark it as update-dependents so it will be skipped from the workspace',
     ],
     ['j', 'json', 'output as json format'],
   ] as CommandOptions;
   loader = true;
   private = true;
 
-  constructor(private snapping: SnappingMain, private logger: Logger) {}
+  constructor(
+    private snapping: SnappingMain,
+    private logger: Logger
+  ) {}
 
   async report([data]: [string], options: SnapFromScopeOptions) {
     const results = await this.json([data], options);
@@ -110,14 +111,10 @@ to ignore multiple issues, separate them by a comma and wrap with quotes. to ign
       disableSnapPipeline = false,
       ignoreBuildErrors = false,
       rebuildDepsGraph,
-      forceDeploy = false,
       updateDependents,
     }: SnapFromScopeOptions
   ) {
     const disableTagAndSnapPipelines = disableSnapPipeline;
-    if (forceDeploy) {
-      ignoreBuildErrors = true;
-    }
     if (disableTagAndSnapPipelines && ignoreBuildErrors) {
       throw new BitError('you can use either ignore-build-errors or disable-snap-pipeline, but not both');
     }
